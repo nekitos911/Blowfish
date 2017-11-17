@@ -1,6 +1,9 @@
 package ru.javaBlowfish;
 
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+import java.math.BigInteger;
+import java.nio.ByteBuffer;
 
 public class Blowfish {
     private static final long modulus = (long) Math.pow(2L, 32);
@@ -9,7 +12,7 @@ public class Blowfish {
     private static final int ROUNDS = 16;
     private long[] p = new long[N + 2];
     private long[][] s = new long[4][256];
-    private String myString = "privettnq";
+    private String myString = "qwertyui";
     private String IV = "12345678";
 //    private char[] IV;
     private long Xl,Xr;
@@ -24,10 +27,8 @@ public class Blowfish {
         System.arraycopy(RandomNumberTables.bf_P,0,p,0,N + 2);
         System.arraycopy(RandomNumberTables.bf_S,0,s,0,RandomNumberTables.bf_S.length);
         byte[] byteKey = hexKey.getBytes();
-//        int[] intArr = byte2int(byteKey);
-//        byte[] byteArr = int2byte(intArr);
         setupKey(byteKey,byteKey.length);
-        //encrypt(myString);
+        encrypt(myString);
     }
 
     private void setupKey(byte[] key,int length) {
@@ -57,11 +58,36 @@ public class Blowfish {
         }
     }
 
+    public long bytesToLong(byte[] bytes) {
+        ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES);
+        buffer.put(bytes);
+        buffer.flip();//need flip
+        return buffer.getLong();
+    }
+
+    private char[] longToChars(long value) {
+        ByteBuffer buf = ByteBuffer.allocate(8);
+        buf.putLong(value);
+        buf.rewind();
+        return buf.asCharBuffer().array();
+    }
+    public byte[] longToBytes(long x) {
+        ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES);
+        buffer.putLong(x);
+        return buffer.array();
+    }
+    public byte[] intToBytes(int x) {
+        ByteBuffer buffer = ByteBuffer.allocate(Integer.BYTES);
+        buffer.putLong(x);
+        return buffer.array();
+    }
+
     private void encipher() {
+
         Xl = xor(Xl,p[0]);
-        for (int i = 0; i < ROUNDS; i ++) {
-            Xr = xor(Xr,xor(F(Xl),p[i]));
-            Xl = xor(Xl,xor(F(Xr),p[++i]));
+        for (int i = 0; i < ROUNDS; i += 2) {
+            Xr = xor(Xr,xor(F(Xl),p[i + 1]));
+            Xl = xor(Xl,xor(F(Xr),p[i + 2]));
         }
         Xr = xor(Xr,p[17]);
         //Swap Xl and Xr
@@ -70,7 +96,20 @@ public class Blowfish {
         Xl = temp;
     }
 
-    public void encrypt(String data) {
+    private void decipher() {
+        Xl = xor(Xl,p[N + 1]);
+        for (int i = N; i > 0; i -= 2) {
+            Xr = xor(Xr,xor(F(Xl),p[i]));
+            Xl = xor(Xl,xor(F(Xr),p[i - 1]));
+        }
+        Xr = xor(Xr,p[0]);
+        //Swap Xl and Xr
+        long temp = Xr;
+        Xr = Xl;
+        Xl = temp;
+    }
+
+    public void encrypt(String data) throws UnsupportedEncodingException {
         if(data.length() % 8 != 0) {
             StringBuilder dataBuilder = new StringBuilder(data);
             while (dataBuilder.length() % 8 != 0) {
@@ -78,70 +117,65 @@ public class Blowfish {
             }
             data = dataBuilder.toString();
         }
-        byte[] binaryData = data.getBytes();
-        //int[] intData = byte2int(binaryData);
+        byte[] binaryData = data.getBytes("Cp1251");
+        long longData;
+        byte[] tmp = data.substring(0,8).getBytes("Cp1251");
+        System.out.println(tmp[0]);
+        longData = bytesToLong(tmp);
         byte[] IVByte = IV.getBytes();
-        System.out.println(IVByte[0]);
-//        for (int i = 0; i < binaryData.length ; i++) {
-//            binaryData[i] ^=
-//        }
-
-    }
-
-    private void decipher() {
-        Xl = xor(Xl,p[N + 1]);
-        for (int i = N; i > 0; i --) {
-            Xr = xor(Xr,xor(F(Xl),p[i]));
-            Xr = xor(Xl,xor(F(Xr),p[--i]));
+        long xorArr;
+       // xorArr = xor(longData,bytesToLong(IVByte));
+        //System.out.println(xorArr + " xorArr");
+        xorArr = encryptBlock(Long.reverseBytes(longData));
+        xorArr = decryptBlock(Long.reverseBytes(xorArr));
+        //xorArr = xor(xorArr,bytesToLong(IVByte));
+        for (int i = 0; i < 8; i++) {
+            System.out.print((char)longToBytes(xorArr)[i]);
         }
-        Xr = xor(Xr,p[N + 1]);
-        //Swap Xl and Xr
-        long temp = Xr;
-        Xr = Xl;
-        Xl = temp;
     }
 
-    private long F(long X) {
-        long a = unsignedLong(X) >> 24;
-        long b = unsignedLong(X) >> 16;
-        long c = unsignedLong(X) >> 8;
-        long d = unsignedLong(X);
+    private long encryptBlock(long block) {
+        byte[] tmp = new byte[8];
+        Xr = (int) ((block >> 32));
+        Xl = (int)block;
+        System.out.println("Xl " + (Xl));
+        System.out.println("Xr " + Xr);
+        encipher();
+        System.out.println("Xl after " + Xl);
+        System.out.println("Xr after " + Xr);
+        System.arraycopy(BigInteger.valueOf(Long.reverseBytes(Xl)).toByteArray(),0,tmp,0,4);
+        System.arraycopy(BigInteger.valueOf(Long.reverseBytes(Xr)).toByteArray(),0,tmp,4,4);
+        return bytesToLong(tmp);
+    }
+
+    private long decryptBlock(long block) {
+        byte[] tmp = new byte[8];
+        Xr = (int) ((block >> 32));
+        Xl = (int)(block);
+        System.out.println("Xl " + Xl);
+        System.out.println("Xr " + Xr);
+        decipher();
+        System.out.println("Xl after " + Xl);
+        System.out.println("Xr after " + Xr);
+        System.arraycopy(BigInteger.valueOf(Long.reverseBytes(Xl)).toByteArray(),0,tmp,0,4);
+        System.arraycopy(BigInteger.valueOf(Long.reverseBytes(Xr)).toByteArray(),0,tmp,4,4);
+        return bytesToLong(tmp);
+
+    }
+
+    private long F(long xl) {
+        long a = (xl & 0xff000000) >> 24;
+        long b = (xl & 0x00ff0000) >> 16;
+        long c = (xl & 0x0000ff00) >> 8;
+        long d = xl & 0x000000ff;
 
         // Perform all ops as longs then and out the last 32-bits to obtain the integer
-        long f = (s[0][(int)a] + s[1][(int)b]) % modulus;
-        f = xor(f,s[2][(int)c]);
-        f += s[3][(int)d];
+        long f = (s[0][(int) a] + s[1][(int) b]) % modulus;
+        f = xor(f, s[2][(int) c]);
+        f += s[3][(int) d];
         f %= modulus;
         return f;
     }
-
-//    private int[] byte2int(byte[] buf){
-//        int[] intArr = new int[buf.length / 4];
-//        int offset = 0;
-//
-//        for (int i = 0; i < intArr.length; i++) {
-//            intArr[i] =  (buf[3 + offset] & 0xFF) | ((buf[2 + offset] & 0xFF) << 8) |
-//                    ((buf[1 + offset] & 0xFF) << 16) | ((buf[offset] & 0xFF) << 24);
-//            offset +=4;
-//        }
-//        return intArr;
-//    }
-
-//    private byte[] int2byte(int[] src){
-//        int srcLength = src.length;
-//        byte[] dst = new byte[srcLength << 2];
-//
-//        for (int i=0; i<srcLength; i++) {
-//            int x = src[i];
-//            int j = i << 2;
-//            dst[j++] = (byte) ((x >>> 24) & 0xff);
-//
-//            dst[j++] = (byte) ((x >>> 16) & 0xff);
-//            dst[j++] = (byte) ((x >>> 8) & 0xff);
-//            dst[j++] = (byte) ((x) & 0xff);
-//        }
-//        return dst;
-//    }
 
     private String byteToHex(char x) {
         String hex = "0123456789ABCDEF";

@@ -8,8 +8,7 @@ import javafx.scene.control.TextField;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.FileChooser;
 
-import java.io.File;
-import java.io.IOException;
+import java.io.*;
 import java.util.LinkedList;
 
 public class Controller {
@@ -28,6 +27,7 @@ public class Controller {
     private java.util.List<File> fileNames;
     private static String IV = "12345678";
     private static final String ARCHIVE_NAME = "Encrypted.zip";
+    private Blowfish bf;
 
     public void openFileButton() throws IOException {
         FileChooser fileChooser = new FileChooser();
@@ -54,6 +54,19 @@ public class Controller {
             folderPathLabel.setText(fileNames.get(0).getAbsolutePath() + File.separator);
     }
 
-    public void encrypt() {}
+    public void encrypt() throws IOException {
+        bf = new Blowfish(secretKeyLabel.getCharacters().toString());
+        FileInputStream fi = new FileInputStream(fileNames.get(0).getPath());
+        InputStreamReader is = new InputStreamReader(fi,"Cp1251");
+        FileOutputStream fo = new FileOutputStream("q.txt");
+        StringBuilder dataBuilder = new StringBuilder();
+        int input;
+        while ((input = is.read()) != -1) {
+            dataBuilder.append((char)input);
+        }
+        String data = dataBuilder.toString();
+        System.out.println(data);
+        bf.encrypt(data);
+    }
     public void decrypt() {}
 }
