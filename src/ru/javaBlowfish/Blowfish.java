@@ -2,8 +2,6 @@ package ru.javaBlowfish;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
-import java.math.BigInteger;
-import java.nio.ByteBuffer;
 
 public class Blowfish {
     private static final long modulus = (long) Math.pow(2L, 32);
@@ -12,9 +10,10 @@ public class Blowfish {
     private static final int ROUNDS = 16;
     private long[] p = new long[N + 2];
     private long[][] s = new long[4][256];
-    private String myString = "qwertyui";
+    private String myString = "qwertyuЙ";
     private String IV = "12345678";
-//    private char[] IV;
+    private byte[] byteIV = IV.getBytes("Cp1251");
+    //    private char[] IV;
     private long Xl,Xr;
     private boolean IVSet;
     public Blowfish(String hexKey) throws IOException {
@@ -26,16 +25,15 @@ public class Blowfish {
         IVSet = false;
         System.arraycopy(RandomNumberTables.bf_P,0,p,0,N + 2);
         System.arraycopy(RandomNumberTables.bf_S,0,s,0,RandomNumberTables.bf_S.length);
-        byte[] byteKey = hexKey.getBytes();
+        byte[] byteKey = hexKey.getBytes("Cp1251");
         setupKey(byteKey,byteKey.length);
-        encrypt(myString);
     }
 
     private void setupKey(byte[] key,int length) {
         int j = 0;
         for (int i = 0; i < N + 2; i++) {
-            int data = ((key[j % length] & 0xFF) << 24) + ((key[(j + 1) % length] & 0xFF) << 16)
-                    + ((key[(j + 2) % length] & 0xFF) << 8) + (key[(j + 3) % length] & 0xFF);
+            int data = ((key[j]) << 24) + ((key[(j + 1)]) << 16)
+                    + ((key[(j + 2)]) << 8) + (key[(j + 3)]);
             p [i] = xor(p[i],data);
             j = (j + 4) % length ;
         }
@@ -58,32 +56,23 @@ public class Blowfish {
         }
     }
 
-    public long bytesToLong(byte[] bytes) {
-        ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES);
-        buffer.put(bytes);
-        buffer.flip();//need flip
-        return buffer.getLong();
+    private long bytesToLong(byte[] key) {
+        return (long)key[7] << 56 & 0xFF00000000000000L | (long)key[6] << 48 & 0x00FF000000000000L |
+                (long)key[5] << 40 & 0x0000FF0000000000L | (long)key[4] << 32 & 0x000000FF00000000L |
+                (long)key[3] << 24 & 0x00000000FF000000L | (long)key[2] << 16 & 0x0000000000FF0000L |
+                (long)key[1] << 8 & 0x000000000000FFF0L | (long)key[0] & 0x00000000000000FFL;
+
     }
 
-    private char[] longToChars(long value) {
-        ByteBuffer buf = ByteBuffer.allocate(8);
-        buf.putLong(value);
-        buf.rewind();
-        return buf.asCharBuffer().array();
-    }
-    public byte[] longToBytes(long x) {
-        ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES);
-        buffer.putLong(x);
-        return buffer.array();
-    }
-    public byte[] intToBytes(int x) {
-        ByteBuffer buffer = ByteBuffer.allocate(Integer.BYTES);
-        buffer.putLong(x);
-        return buffer.array();
+    public byte[] longToBytes(long value) {
+        byte[] array = new byte[8];
+        for (int i = 0; i < 8; i++) {
+            array[i] = (byte) ((value >> (i * 8)) & 0xFF);
+        }
+        return array;
     }
 
     private void encipher() {
-
         Xl = xor(Xl,p[0]);
         for (int i = 0; i < ROUNDS; i += 2) {
             Xr = xor(Xr,xor(F(Xl),p[i + 1]));
@@ -109,58 +98,66 @@ public class Blowfish {
         Xl = temp;
     }
 
-    public void encrypt(String data) throws UnsupportedEncodingException {
-        if(data.length() % 8 != 0) {
+    public String encrypt(String data) throws UnsupportedEncodingException {
+        int length = data.getBytes("Windows-1251").length;
+        if(length % 8 != 0) {
             StringBuilder dataBuilder = new StringBuilder(data);
             while (dataBuilder.length() % 8 != 0) {
-                dataBuilder.append("0");
+                dataBuilder.append(String.valueOf(8 - (length % 8)));
             }
             data = dataBuilder.toString();
         }
-        byte[] binaryData = data.getBytes("Cp1251");
-        long longData;
-        byte[] tmp = data.substring(0,8).getBytes("Cp1251");
-        System.out.println(tmp[0]);
-        longData = bytesToLong(tmp);
-        byte[] IVByte = IV.getBytes();
-        long xorArr;
-       // xorArr = xor(longData,bytesToLong(IVByte));
-        //System.out.println(xorArr + " xorArr");
-        xorArr = encryptBlock(Long.reverseBytes(longData));
-        xorArr = decryptBlock(Long.reverseBytes(xorArr));
-        //xorArr = xor(xorArr,bytesToLong(IVByte));
+        byte[] byteData = new byte[8];
+        System.arraycopy(data.getBytes("Windows-1251"),0,byteData,0,8);
         for (int i = 0; i < 8; i++) {
-            System.out.print((char)longToBytes(xorArr)[i]);
+            byteData[i] ^= byteIV[i];
         }
+        StringBuilder encryptedString = new StringBuilder();
+        encryptedString.insert(0,setBlock(byteData,"encrypt"));
+        for (int i = 8; i < data.length(); i+= 8) {
+            for (int j = 0; j < 8; j++) {
+               byteData[j] ^= data.getBytes("Cp1251")[j + i];
+            }
+            encryptedString = new StringBuilder(setBlock(byteData,"encrypt"));
+        }
+        return encryptedString.toString();
     }
 
-    private long encryptBlock(long block) {
-        byte[] tmp = new byte[8];
-        Xr = (int) ((block >> 32));
-        Xl = (int)block;
-        System.out.println("Xl " + (Xl));
-        System.out.println("Xr " + Xr);
-        encipher();
-        System.out.println("Xl after " + Xl);
-        System.out.println("Xr after " + Xr);
-        System.arraycopy(BigInteger.valueOf(Long.reverseBytes(Xl)).toByteArray(),0,tmp,0,4);
-        System.arraycopy(BigInteger.valueOf(Long.reverseBytes(Xr)).toByteArray(),0,tmp,4,4);
-        return bytesToLong(tmp);
+    public String decrypt(String data,int fileLength) throws UnsupportedEncodingException {
+        byte[] byteData = data.getBytes("Cp1251");
+        StringBuilder decryptedString = new StringBuilder();
+        decryptedString.append(setBlock(byteData,"decrypt"));
+        byteData = decryptedString.toString().getBytes("Cp1251");
+        for (int i = 0; i < 8; i++) {
+            byteData[i] ^= byteIV[i];
+        }
+        decryptedString = new StringBuilder(new String(byteData));
+        byteData = data.getBytes("UTF-8");
+        //TODO Неверно шифрует блоки
+        for (int i = 8; i < fileLength; i+= 8) {
+            for (int j = 0; j < 8; j++) {
+                byte tmpData = data.getBytes("Cp1251")[j + i];
+                //byteData[j] ^= setBlock(b)
+            }
+            decryptedString.append(setBlock(byteData,"decrypt"));
+        }
+        return decryptedString.toString();
     }
 
-    private long decryptBlock(long block) {
+    private String setBlock(byte[] block, String mode) {
         byte[] tmp = new byte[8];
-        Xr = (int) ((block >> 32));
-        Xl = (int)(block);
-        System.out.println("Xl " + Xl);
-        System.out.println("Xr " + Xr);
-        decipher();
-        System.out.println("Xl after " + Xl);
-        System.out.println("Xr after " + Xr);
-        System.arraycopy(BigInteger.valueOf(Long.reverseBytes(Xl)).toByteArray(),0,tmp,0,4);
-        System.arraycopy(BigInteger.valueOf(Long.reverseBytes(Xr)).toByteArray(),0,tmp,4,4);
-        return bytesToLong(tmp);
+        byte[] newTmp = new byte[4];
 
+        if (mode.equals("encrypt")) {
+            Xr = ((bytesToLong(block)) >> 32);
+            Xl = (int)bytesToLong(block);
+            encipher();
+        } else if (mode.equals("decrypt")) {
+            decipher();
+        }
+        System.arraycopy(longToBytes(Xl),0,tmp,0,4);
+        System.arraycopy(longToBytes(Xr),0,tmp,4,4);
+        return new String(tmp);
     }
 
     private long F(long xl) {

@@ -28,6 +28,7 @@ public class Controller {
     private static String IV = "12345678";
     private static final String ARCHIVE_NAME = "Encrypted.zip";
     private Blowfish bf;
+    private boolean isEncrypted;
 
     public void openFileButton() throws IOException {
         FileChooser fileChooser = new FileChooser();
@@ -55,18 +56,34 @@ public class Controller {
     }
 
     public void encrypt() throws IOException {
+        isEncrypted = true;
         bf = new Blowfish(secretKeyLabel.getCharacters().toString());
         FileInputStream fi = new FileInputStream(fileNames.get(0).getPath());
+        FileOutputStream fo = new FileOutputStream("encrypted.bin");
         InputStreamReader is = new InputStreamReader(fi,"Cp1251");
-        FileOutputStream fo = new FileOutputStream("q.txt");
+        OutputStreamWriter os = new OutputStreamWriter(fo,"Cp1251");
         StringBuilder dataBuilder = new StringBuilder();
         int input;
         while ((input = is.read()) != -1) {
             dataBuilder.append((char)input);
         }
         String data = dataBuilder.toString();
-        System.out.println(data);
-        bf.encrypt(data);
+        data = bf.encrypt(data);
+        System.out.println(data.length());
+        fi.close();
+        fo.close();
+        is.close();
+        os.close();
     }
-    public void decrypt() {}
+    public void decrypt() throws IOException {
+        if(!isEncrypted)
+            bf = new Blowfish(secretKeyLabel.getCharacters().toString());
+        FileInputStream fi = new FileInputStream(fileNames.get(0).getPath());
+        FileOutputStream fo = new FileOutputStream("encrypted.txt");
+        InputStreamReader is = new InputStreamReader(fi,"Cp1251");
+        OutputStreamWriter os = new OutputStreamWriter(fo,"Cp1251");
+        String data = "";
+        //bf.decrypt(data);
+        System.out.println(data);
+    }
 }
