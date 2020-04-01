@@ -1,6 +1,5 @@
 package ru.hw.blowfish;
 
-import com.google.common.collect.Lists;
 import lombok.SneakyThrows;
 import lombok.Synchronized;
 import lombok.val;
@@ -9,17 +8,11 @@ import org.apache.commons.lang3.RandomStringUtils;
 import ru.hw.blowfish.enums.BlockCipherMode;
 import ru.hw.blowfish.enums.EncipherMode;
 
-import static ru.hw.blowfish.Utils.xor;
-import static ru.hw.blowfish.Utils.unsignedLong;
-import static ru.hw.blowfish.Utils.createBlocks;
-import static ru.hw.blowfish.Utils.MODULUS;
-import static ru.hw.blowfish.Utils.ROUNDS;
-import static ru.hw.blowfish.Utils.N;
-import static ru.hw.blowfish.Utils.BLOCK_SIZE;
 import java.nio.ByteBuffer;
-import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
+
+import static ru.hw.blowfish.Utils.*;
 
 public class Blowfish {
     private long[] p = new long[N + 2];
@@ -73,18 +66,7 @@ public class Blowfish {
         }
     }
 
-    private long bytesToLong(byte[] key) {
-        val copyArr = Arrays.copyOf(key, key.length);
-        ArrayUtils.reverse(copyArr);
-        return ByteBuffer.wrap(copyArr).getLong();
-    }
-
-    private byte[] longToBytes(long value) {
-        val ret = ByteBuffer.allocate(8).putLong(value).array();
-        ArrayUtils.reverse(ret);
-        return ret;
-    }
-
+    @Synchronized
     private void encipher() {
         Xl = xor(Xl, p[0]);
 
@@ -100,6 +82,7 @@ public class Blowfish {
         Xl = temp;
     }
 
+    @Synchronized
     private void decipher() {
         Xl = xor(Xl, p[N + 1]);
         for (int i = N; i > 0; i -= 2) {
@@ -133,7 +116,7 @@ public class Blowfish {
         val mode = BlockCipherMode.ENCIPHER;
 
         // проксорил с IV первый блок
-        for (int i = 0; i < blocks.get(0).length; i++) {
+        for (int i = 0; i < BLOCK_SIZE; i++) {
             blocks.get(0)[i] ^= byteIV[i];
         }
 
@@ -211,7 +194,7 @@ public class Blowfish {
         val blocksCopy = blocks.stream().map(ArrayUtils::clone).collect(Collectors.toList());
 
         // проксорил с IV первый блок
-        for (int i = 0; i < blocks.get(0).length; i++) {
+        for (int i = 0; i < BLOCK_SIZE; i++) {
             blocks.get(0)[i] ^= byteIV[i];
         }
 
@@ -233,7 +216,6 @@ public class Blowfish {
 
             // зашифровал открытый блок и положил на выход
             blocks.set(i, setBlock(secondBlock, mode));
-            int a = 0;
         }
 
         return blocks.parallelStream().map(String::new).collect(Collectors.joining());
@@ -272,7 +254,7 @@ public class Blowfish {
     @SneakyThrows
     public String encipher(String data) {
         // Set random IV
-        byteIV = "12345678".getBytes()/*RandomStringUtils.randomAlphabetic(BLOCK_SIZE).getBytes()*/;
+        byteIV = RandomStringUtils.randomAlphabetic(BLOCK_SIZE).getBytes();
         val bytesData = data.getBytes();
         val realLength = bytesData.length;
         val padding = (BLOCK_SIZE - bytesData.length % BLOCK_SIZE) % BLOCK_SIZE;
@@ -311,7 +293,8 @@ public class Blowfish {
         return new String(ArrayUtils.subarray(bytes, 0, (int)realLength));
     }
 
-    private synchronized byte[] setBlock(byte[] block, BlockCipherMode mode) {
+    @Synchronized
+    private byte[] setBlock(byte[] block, BlockCipherMode mode) {
         byte[] tmp = new byte[8];
 
         Xl = unsignedLong(bytesToLong(block));

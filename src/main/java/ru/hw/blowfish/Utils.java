@@ -2,8 +2,11 @@ package ru.hw.blowfish;
 
 import com.google.common.collect.Lists;
 import com.google.common.primitives.Bytes;
+import lombok.val;
 import org.apache.commons.lang3.ArrayUtils;
 
+import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -19,6 +22,18 @@ public class Utils {
 
     public static long unsignedLong(long number) {
         return number & 0xffffffffL;
+    }
+
+    public static long bytesToLong(byte[] key) {
+        val copyArr = Arrays.copyOf(key, key.length);
+        ArrayUtils.reverse(copyArr);
+        return ByteBuffer.wrap(copyArr).getLong();
+    }
+
+    public static byte[] longToBytes(long value) {
+        val ret = ByteBuffer.allocate(8).putLong(value).array();
+        ArrayUtils.reverse(ret);
+        return ret;
     }
 
     public static List<byte[]> createBlocks(byte[] data) {
