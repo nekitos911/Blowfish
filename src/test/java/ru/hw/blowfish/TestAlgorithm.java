@@ -1,22 +1,21 @@
 package ru.hw.blowfish;
 
 import lombok.val;
-import org.junit.Assert;
-import org.junit.Test;
-import ru.hw.blowfish.Blowfish;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import ru.hw.blowfish.enums.EncipherMode;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import java.nio.charset.Charset;
-
-public class TestAlgorithm
+class TestAlgorithm
 {
-    @Test
-    public void testEcbMode() throws Exception {
-        val inputData = "test text to encipher!!!";
-        val blowfish = new Blowfish("qwertyui");
+    @ParameterizedTest
+    @EnumSource(EncipherMode.class)
+    void testAlgorithms(EncipherMode mode) {
+        val inputData = "Привет text to encipher!!!";
 
-        String encipheredData = blowfish.encipher(inputData);
-        String decipheredData = blowfish.decipher(encipheredData);
+        String encipheredData = new Blowfish("qwertyui", mode).encipher(inputData);
+        String decipheredData = new Blowfish("qwertyui", mode).decipher(encipheredData);
 
-        Assert.assertEquals(inputData, decipheredData);
+        assertEquals(inputData, decipheredData);
     }
 }

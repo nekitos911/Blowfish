@@ -1,0 +1,30 @@
+package ru.hw.blowfish;
+
+import com.google.common.collect.Lists;
+import com.google.common.primitives.Bytes;
+import org.apache.commons.lang3.ArrayUtils;
+
+import java.util.List;
+import java.util.stream.Collectors;
+
+public class Utils {
+    public static final long MODULUS = (long)1 << 32;
+    public static final int N = 16;
+    public static final int ROUNDS = 16;
+    public static final int BLOCK_SIZE = Long.BYTES;
+
+    public static long xor(long a,long b) {
+        return unsignedLong(a ^ b);
+    }
+
+    public static long unsignedLong(long number) {
+        return number & 0xffffffffL;
+    }
+
+    public static List<byte[]> createBlocks(byte[] data) {
+        return Lists.partition(Bytes.asList(data), BLOCK_SIZE)
+                .parallelStream()
+                .map(bytes -> ArrayUtils.toPrimitive(bytes.toArray(new Byte[0])))
+                .collect(Collectors.toList());
+    }
+}

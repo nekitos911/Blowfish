@@ -1,33 +1,30 @@
 package ru.hw.blowfish;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
-import com.google.common.primitives.Bytes;
-import com.google.common.primitives.Primitives;
 import lombok.SneakyThrows;
+import lombok.Synchronized;
 import lombok.val;
 import org.apache.commons.lang3.ArrayUtils;
+import org.apache.commons.lang3.RandomStringUtils;
 import ru.hw.blowfish.enums.BlockCipherMode;
 import ru.hw.blowfish.enums.EncipherMode;
 
+import static ru.hw.blowfish.Utils.xor;
+import static ru.hw.blowfish.Utils.unsignedLong;
+import static ru.hw.blowfish.Utils.createBlocks;
+import static ru.hw.blowfish.Utils.MODULUS;
+import static ru.hw.blowfish.Utils.ROUNDS;
+import static ru.hw.blowfish.Utils.N;
+import static ru.hw.blowfish.Utils.BLOCK_SIZE;
 import java.nio.ByteBuffer;
-import java.nio.charset.Charset;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 public class Blowfish {
-    private static final long modulus = (long) Math.pow(2L, 32);
-    private static final String IV = "12345678";
-    private static final int N = 16;
-    private static final int MAXBYTES = 56;
-    private static final int ROUNDS = 16;
     private long[] p = new long[N + 2];
     private long[][] s = new long[4][256];
     private byte[] byteIV;
-    //    private char[] IV;
     private long Xl;
     private long Xr;
     private EncipherMode encipherMode;
@@ -44,25 +41,22 @@ public class Blowfish {
             throw new StringIndexOutOfBoundsException("String should be more than 3");
 
         this.encipherMode = encipherMode;
-        byteIV = IV.getBytes();
-        setupKey(hexKey.getBytes(Charset.forName("Cp1251")));
+        setupKey(hexKey.getBytes());
     }
 
     private void setupKey(byte[] key) {
         System.arraycopy(RandomNumberTables.bf_P, 0, p, 0, N + 2);
-        System.arraycopy(RandomNumberTables.bf_S, 0, s, 0, RandomNumberTables.bf_S.length);
+        for (int i = 0; i < s.length; i++)
+            System.arraycopy(RandomNumberTables.bf_S[i], 0, s[i], 0, s[i].length);
 
         int length = key.length;
         int j = 0;
-        for (int i = 0; i < N + 2; i++) {
-            int data = ((key[j]) << 24) + ((key[(j + 1)]) << 16)
-                    + ((key[(j + 2)]) << 8) + (key[(j + 3)]);
-            p [i] = xor(p[i],data);
-            j = (j + 4) % length ;
-        }
 
-        Xl = 0;
-        Xr = 0;
+        for (int i = 0; i < N + 2; i++) {
+            p[i] &= 0xffffffffL;
+            p[i] ^= key[j];
+            j = (j + 1) % length;
+        }
 
         for (int i = 0; i < N + 2; i += 2) {
             encipher();
@@ -80,31 +74,26 @@ public class Blowfish {
     }
 
     private long bytesToLong(byte[] key) {
-        return (long)key[7] << 56 & 0xFF00000000000000L | (long)key[6] << 48 & 0x00FF000000000000L |
-                (long)key[5] << 40 & 0x0000FF0000000000L | (long)key[4] << 32 & 0x000000FF00000000L |
-                (long)key[3] << 24 & 0x00000000FF000000L | (long)key[2] << 16 & 0x0000000000FF0000L |
-                (long)key[1] << 8 & 0x000000000000FFF0L | (long)key[0] & 0x00000000000000FFL;
-
+        val copyArr = Arrays.copyOf(key, key.length);
+        ArrayUtils.reverse(copyArr);
+        return ByteBuffer.wrap(copyArr).getLong();
     }
 
     private byte[] longToBytes(long value) {
-//        byte[] array = new byte[8];
-//        for (int i = 0; i < 8; i++) {
-//            array[i] = (byte) ((value >> (i * 8)) & 0xFF);
-//        }
-//        return array;
-        return ByteBuffer.allocate(8).putLong(value).array();
+        val ret = ByteBuffer.allocate(8).putLong(value).array();
+        ArrayUtils.reverse(ret);
+        return ret;
     }
 
     private void encipher() {
         Xl = xor(Xl, p[0]);
 
-        IntStream.range(0, ROUNDS).forEach(i -> {
+        for (int i = 0; i < ROUNDS; i += 2) {
             Xr = xor(Xr, xor(F(Xl), p[i + 1]));
             Xl = xor(Xl, xor(F(Xr), p[i + 2]));
-        });
+        }
 
-        Xr = xor(Xr,p[17]);
+        Xr = xor(Xr, p[N + 1]);
         //Swap Xl and Xr
         long temp = Xr;
         Xr = Xl;
@@ -114,133 +103,228 @@ public class Blowfish {
     private void decipher() {
         Xl = xor(Xl, p[N + 1]);
         for (int i = N; i > 0; i -= 2) {
-            Xr = xor(Xr,xor(F(Xl),p[i]));
-            Xl = xor(Xl,xor(F(Xr),p[i - 1]));
+            Xr = xor(Xr, xor(F(Xl), p[i]));
+            Xl = xor(Xl, xor(F(Xr), p[i - 1]));
         }
-        Xr = xor(Xr,p[0]);
+        Xr = xor(Xr, p[0]);
         //Swap Xl and Xr
         long temp = Xr;
         Xr = Xl;
         Xl = temp;
     }
 
-    private String ECBMode(byte[] data, BlockCipherMode mode) {
-        return Lists.partition(Bytes.asList(data), Long.BYTES).stream()
-                .map(block -> setBlock(ArrayUtils.toPrimitive(block.toArray(new Byte[0])), mode))
+    private String ECBMode(List<byte[]> blocks, BlockCipherMode mode) {
+        return blocks.parallelStream()
+                .map(block -> ArrayUtils.toPrimitive(ArrayUtils.toObject(block)))
+                .map(block -> setBlock(block, mode))
+                .map(String::new)
                 .collect(Collectors.joining());
     }
 
-    private String ECBEncipher(byte[] data) {
-        return ECBMode(data, BlockCipherMode.ENCIPHER);
-//        List<String> blocks = new ArrayList<>();
-//        for (int i = 0; i < data.length; i += 8) {
-//            val block = setBlock(Arrays.copyOfRange(data, i, i + 8), BlockCipherMode.ENCIPHER);
-//            blocks.add(block);
-//        }
-//        return String.join("", blocks);
+    private String ECBEncipher(List<byte[]> blocks) {
+        return ECBMode(blocks, BlockCipherMode.ENCIPHER);
     }
 
-    private String ECBDecipher(byte[] data) {
-        return ECBMode(data, BlockCipherMode.DECIPHER);
+    private String ECBDecipher(List<byte[]> blocks) {
+        return ECBMode(blocks, BlockCipherMode.DECIPHER);
     }
 
-    private String CBCMode(byte[] data, BlockCipherMode mode) {
-        return null;
+    private String CBCEncipher(List<byte[]> blocks) {
+        val mode = BlockCipherMode.ENCIPHER;
+
+        // проксорил с IV первый блок
+        for (int i = 0; i < blocks.get(0).length; i++) {
+            blocks.get(0)[i] ^= byteIV[i];
+        }
+
+        // зашифровал первый блок и положил на выход
+        blocks.set(0, setBlock(blocks.get(0), mode));
+
+        // все остальные блоки
+        for (int i = 1; i < blocks.size(); i++) {
+            byte[] firstBlock = blocks.get(i - 1);
+            byte[] secondBlock = blocks.get(i);
+
+            // проксорил блоки (зашифрованный с открытым)
+            for (int j = 0; j < BLOCK_SIZE; j++) {
+                secondBlock[j] ^= firstBlock[j];
+            }
+
+            // зашифровал открытый блок и положил на выход
+            blocks.set(i, setBlock(secondBlock, mode));
+        }
+
+        return blocks.parallelStream().map(String::new).collect(Collectors.joining());
     }
 
-    private String CBCEncipher(byte[] data, BlockCipherMode mode) {
-        return CBCMode(data, mode);
+    private String CBCDecipher(List<byte[]> blocks) {
+        val mode = BlockCipherMode.DECIPHER;
+
+        // на выход все блоки, кроме первого
+        for (int i = blocks.size() - 1; i >= 1; i--) {
+            // последний блок
+            byte[] lastBlock = blocks.get(i);
+            // предпоследний блок
+            byte[] prevBlock = blocks.get(i - 1);
+
+            // расшифровал последний
+            lastBlock = setBlock(lastBlock, mode);
+
+            // заксорил с предпоследним
+            for (int j = 0; j < BLOCK_SIZE; j++) {
+                lastBlock[j] ^= prevBlock[j];
+            }
+
+            // положил на выход
+            blocks.set(i, lastBlock);
+        }
+
+        // расшифровал первый блок
+        blocks.set(0, setBlock(blocks.get(0), mode));
+
+        // проксорил первый блок с IV и положил 1 блок на выход
+        for (int i = 0; i < blocks.get(0).length; i++) {
+            blocks.get(0)[i] ^= byteIV[i];
+        }
+
+        return blocks.parallelStream().map(String::new).collect(Collectors.joining());
     }
 
-    private String CBCDecipher(byte[] data, BlockCipherMode mode) {
-        return CBCMode(data, mode);
+    private String OFBMode(List<byte[]> blocks) {
+        var byteIVCopy = ArrayUtils.clone(byteIV);
+
+        for (byte[] bytes : blocks) {
+            // Шифруем/Дешифруем IV
+            byteIVCopy = setBlock(byteIVCopy, BlockCipherMode.ENCIPHER);
+
+            // проксорил блоки (зашифрованный IV с блоком)
+            for (int j = 0; j < BLOCK_SIZE; j++) {
+                bytes[j] ^= byteIVCopy[j];
+            }
+        }
+
+        return blocks.parallelStream().map(String::new).collect(Collectors.joining());
+    }
+
+    private String PCBCEncipher(List<byte[]> blocks) {
+        val mode = BlockCipherMode.ENCIPHER;
+        val blocksCopy = blocks.stream().map(ArrayUtils::clone).collect(Collectors.toList());
+
+        // проксорил с IV первый блок
+        for (int i = 0; i < blocks.get(0).length; i++) {
+            blocks.get(0)[i] ^= byteIV[i];
+        }
+
+        // зашифровал первый блок и положил на выход
+        blocks.set(0, setBlock(blocks.get(0), mode));
+
+        // все остальные блоки
+        for (int i = 1; i < blocks.size(); i++) {
+            for (int j = 0; j < BLOCK_SIZE; j++) {
+                blocksCopy.get(i - 1)[j] ^= blocks.get(i - 1)[j];
+            }
+            byte[] firstBlock = blocksCopy.get(i - 1);
+            byte[] secondBlock = blocks.get(i);
+
+            // проксорил блоки (зашифрованный с открытым)
+            for (int j = 0; j < BLOCK_SIZE; j++) {
+                secondBlock[j] ^= firstBlock[j];
+            }
+
+            // зашифровал открытый блок и положил на выход
+            blocks.set(i, setBlock(secondBlock, mode));
+            int a = 0;
+        }
+
+        return blocks.parallelStream().map(String::new).collect(Collectors.joining());
+    }
+
+    private String PCBCDecipher(List<byte[]> blocks) {
+        val mode = BlockCipherMode.DECIPHER;
+        val blocksCopy = blocks.stream().map(ArrayUtils::clone).collect(Collectors.toList());
+
+        // расшифровал первый блок и положил на выход
+        blocks.set(0, setBlock(blocks.get(0), mode));
+
+        // проксорил с IV первый блок
+        for (int i = 0; i < blocks.get(0).length; i++) {
+            blocks.get(0)[i] ^= byteIV[i];
+        }
+
+        // все остальные блоки
+        for (int i = 1; i < blocks.size(); i++) {
+            for (int j = 0; j < BLOCK_SIZE; j++) {
+                blocksCopy.get(i - 1)[j] ^= blocks.get(i - 1)[j];
+            }
+            byte[] firstBlock = blocksCopy.get(i - 1);
+            var a = setBlock(blocks.get(i), BlockCipherMode.DECIPHER);
+
+            for (int j = 0; j < BLOCK_SIZE; j++) {
+                a[j] ^= firstBlock[j];
+            }
+
+            blocks.set(i, a);
+        }
+
+        return blocks.parallelStream().map(String::new).collect(Collectors.joining());
     }
 
     @SneakyThrows
     public String encipher(String data) {
-        List<Byte> bytesData = Lists.newArrayList(Bytes.asList(data.getBytes(Charset.forName("CP1251"))));
-        int padding = Long.BYTES - bytesData.size() % Long.BYTES;
+        // Set random IV
+        byteIV = "12345678".getBytes()/*RandomStringUtils.randomAlphabetic(BLOCK_SIZE).getBytes()*/;
+        val bytesData = data.getBytes();
+        val realLength = bytesData.length;
+        val padding = (BLOCK_SIZE - bytesData.length % BLOCK_SIZE) % BLOCK_SIZE;
+        val blocks = createBlocks(ArrayUtils.addAll(bytesData, new byte[padding]));
 
-        IntStream.range(0, padding).forEach(pad -> bytesData.add((byte)0));
-        bytesData.addAll(Bytes.asList(ByteBuffer.allocate(8).putLong(padding).array()));
-
-        return switch (encipherMode) {
-            case ECB -> ECBEncipher(ArrayUtils.toPrimitive(bytesData.toArray(new Byte[0])));
-            case CBC -> "";
-            case OFB -> "";
-            case CFB -> "";
-            default -> throw new RuntimeException("Not supported mode!!!");
-        };
-
-//        // simple block
-//        byte[] byteData = new byte[8];
-//        System.arraycopy(data.getBytes(Charset.forName("CP1251")), 0, byteData, 0, 8);
-//
-//
-//        for (int i = 0; i < 8; i++) {
-//            byteData[i] ^= byteIV[i];
-//        }
-//        StringBuilder encryptedString = new StringBuilder();
-//        encryptedString.insert(0,setBlock(byteData,"encrypt"));
-//        for (int i = 8; i < data.length(); i+= 8) {
-//            for (int j = 0; j < 8; j++) {
-//                byteData[j] ^= data.getBytes(Charset.forName("CP1251"))[j + i];
-//            }
-//            encryptedString = new StringBuilder(setBlock(byteData,"encrypt"));
-//        }
-//        return encryptedString.toString();
+        return
+                new String(byteIV)
+                        + new String(ByteBuffer.allocate(8).putLong(realLength).array())
+                        + switch (encipherMode) {
+                    case ECB -> ECBEncipher(blocks);
+                    case CBC -> CBCEncipher(blocks);
+                    case OFB -> OFBMode(blocks);
+                    case PCBC -> PCBCEncipher(blocks);
+                    default -> throw new RuntimeException("Not supported mode!!!");
+                };
     }
 
     @SneakyThrows
     public String decipher(String data) {
-        val bytesData = data.getBytes(Charset.forName("CP1251"));
+        var bytesData = data.getBytes();
+        // read IV from first 8 bytes
+        byteIV = ArrayUtils.subarray(bytesData, 0, BLOCK_SIZE);
+        val realLength = ByteBuffer.wrap(ArrayUtils.subarray(bytesData, byteIV.length, byteIV.length + BLOCK_SIZE)).getLong();
+        // skip IV and length
+        val blocks = createBlocks(bytesData).subList(2, bytesData.length / BLOCK_SIZE);
 
         String res = switch (encipherMode) {
-            case ECB -> ECBDecipher(bytesData);
-            case CBC -> "";
-            case OFB -> "";
-            case CFB -> "";
+            case ECB -> ECBDecipher(blocks);
+            case CBC -> CBCDecipher(blocks);
+            case OFB -> OFBMode(blocks);
+            case PCBC -> PCBCDecipher(blocks);
             default -> throw new RuntimeException("Not supported mode!!!");
         };
 
-        val bytes = res.getBytes(Charset.forName("CP1251"));
-        val padding = ArrayUtils.subarray(bytes, bytes.length - Long.BYTES, Long.BYTES).length;
-        return new String(ArrayUtils.subarray(bytes, 0, padding));
-
-//        val fileLength = data.length();
-//        byte[] byteData = data.getBytes("Cp1251");
-//        StringBuilder decryptedString = new StringBuilder();
-//        decryptedString.append(setBlock(byteData,BlockCipherMode.DECIPHER));
-//        byteData = decryptedString.toString().getBytes("Cp1251");
-//        for (int i = 0; i < 8; i++) {
-//            byteData[i] ^= byteIV[i];
-//        }
-//        decryptedString = new StringBuilder(new String(byteData));
-//        byteData = data.getBytes(Charset.defaultCharset());
-//        //TODO Неверно шифрует блоки
-//        for (int i = 8; i < fileLength; i+= 8) {
-//            for (int j = 0; j < 8; j++) {
-//                byte tmpData = data.getBytes("Cp1251")[j + i];
-//                //byteData[j] ^= setBlock(b)
-//            }
-//            decryptedString.append(setBlock(byteData,BlockCipherMode.DECIPHER));
-//        }
-//        return decryptedString.toString();
+        val bytes = res.getBytes();
+        return new String(ArrayUtils.subarray(bytes, 0, (int)realLength));
     }
 
-    private String setBlock(byte[] block, BlockCipherMode mode) {
+    private synchronized byte[] setBlock(byte[] block, BlockCipherMode mode) {
         byte[] tmp = new byte[8];
 
-        if (mode == BlockCipherMode.ENCIPHER) {
-            Xr = ((bytesToLong(block)) >> 32);
-            Xl = (int)bytesToLong(block);
-            encipher();
-        } else if (mode == BlockCipherMode.DECIPHER) {
-            decipher();
+        Xl = unsignedLong(bytesToLong(block));
+        Xr = unsignedLong((bytesToLong(block)) >> 32);
+        switch (mode) {
+            case DECIPHER -> decipher();
+            case ENCIPHER -> encipher();
         }
+
         System.arraycopy(longToBytes(Xl),0,tmp,0,4);
         System.arraycopy(longToBytes(Xr),0,tmp,4,4);
-        return new String(tmp);
+
+        return tmp;
     }
 
     private long F(long xl) {
@@ -250,28 +334,10 @@ public class Blowfish {
         long d = xl & 0x000000ff;
 
         // Perform all ops as longs then and out the last 32-bits to obtain the integer
-        long f = (s[0][(int) a] + s[1][(int) b]) % modulus;
+        long f = (s[0][(int) a] + s[1][(int) b]) % MODULUS;
         f = xor(f, s[2][(int) c]);
         f += s[3][(int) d];
-        f %= modulus;
+        f %= MODULUS;
         return f;
     }
-
-    private String byteToHex(char x) {
-        String hex = "0123456789ABCDEF";
-        String result ="";
-        result += hex.toCharArray()[x / 16];
-        result += hex.toCharArray()[x % 16];
-        return result;
-    }
-
-    private long xor(long a,long b) {
-        return unsignedLong(a ^ b);
-    }
-
-    private long unsignedLong(long number) {
-        return number & 0xffffffffL;
-    }
-
-
 }

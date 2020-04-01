@@ -1,9 +1,9 @@
 package ru.hw.blowfish;
 
-public class RandomNumberTables {
+public interface RandomNumberTables {
 
     /*Матрица раундовых ключей*/
-    public static final long bf_P[] = {
+    long[] bf_P = {
             0x243f6a88, 0x85a308d3, 0x13198a2e, 0x03707344,
             0xa4093822, 0x299f31d0, 0x082efa98, 0xec4e6c89,
             0x452821e6, 0x38d01377, 0xbe5466cf, 0x34e90c6c,
@@ -12,7 +12,7 @@ public class RandomNumberTables {
     };
 
     /*Матрица подстановки*/
-    public static final long bf_S[][] = {
+    long[][] bf_S = {
             {0xd1310ba6, 0x98dfb5ac, 0x2ffd72db, 0xd01adfb7,
             0xb8e1afed, 0x6a267e96, 0xba7c9045, 0xf12c7f99,
             0x24a19947, 0xb3916cf7, 0x0801f2e2, 0x858efc16,
