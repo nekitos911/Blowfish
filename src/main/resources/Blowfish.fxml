@@ -13,7 +13,7 @@
 <?import javafx.scene.layout.VBox?>
 <?import javafx.scene.text.Font?>
 
-<VBox maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="450.0" prefWidth="320.0" xmlns="http://javafx.com/javafx/9.0.1" xmlns:fx="http://javafx.com/fxml/1" fx:controller="ru.javaBlowfish.Controller">
+<VBox maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="450.0" prefWidth="320.0" xmlns="http://javafx.com/javafx/9.0.1" xmlns:fx="http://javafx.com/fxml/1" fx:controller="ru.hw.blowfish.Controller">
    <children>
       <Pane prefHeight="136.0" prefWidth="320.0">
          <children>
@@ -46,12 +46,12 @@
       </FlowPane>
       <VBox prefHeight="64.0" prefWidth="320.0">
          <children>
-            <Button mnemonicParsing="false" onAction="#encrypt" prefHeight="22.0" prefWidth="310.0" text="Encrypt">
+            <Button mnemonicParsing="false" onAction="#encipher" prefHeight="22.0" prefWidth="310.0" text="Encipher">
                <VBox.margin>
                   <Insets left="5.0" />
                </VBox.margin>
             </Button>
-            <Button mnemonicParsing="false" onAction="#decrypt" prefHeight="22.0" prefWidth="310.0" text="Decrypt">
+            <Button mnemonicParsing="false" onAction="#decipher" prefHeight="22.0" prefWidth="310.0" text="Decipher">
                <VBox.margin>
                   <Insets left="5.0" top="15.0" />
                </VBox.margin>

@@ -1,4 +1,4 @@
-package ru.javaBlowfish;
+package ru.hw.blowfish;
 
 public class RandomNumberTables {
 
