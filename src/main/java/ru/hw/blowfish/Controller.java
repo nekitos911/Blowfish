@@ -1,22 +1,25 @@
 package ru.hw.blowfish;
 
 import javafx.fxml.FXML;
-import javafx.scene.control.Button;
-import javafx.scene.control.Label;
-import javafx.scene.control.TextArea;
-import javafx.scene.control.TextField;
+import javafx.fxml.Initializable;
+import javafx.scene.control.*;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.FileChooser;
 import lombok.SneakyThrows;
 import lombok.val;
+import org.apache.commons.lang3.ArrayUtils;
+import ru.hw.blowfish.enums.EncipherMode;
 
 import java.io.*;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Optional;
+import java.net.URL;
+import java.nio.ByteBuffer;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
+import java.util.*;
 import java.util.stream.Collectors;
 
-public class Controller {
+public class Controller implements Initializable {
     @FXML
     private TextArea filePathLabel;
     @FXML
@@ -26,21 +29,32 @@ public class Controller {
     @FXML
     private Button selectFolderButton;
     @FXML
+    private Button decipherBtn;
+    @FXML
+    private Button encipherBtn;
+    @FXML
     private TextField secretKeyLabel;
     @FXML
     private Label errorLabel;
+    @FXML
+    private ComboBox<String> encipherModeCB;
     private List<File> files;
-    private static String IV = "12345678";
-    private static final String ARCHIVE_NAME = "Encrypted.zip";
+    private static final String ARCHIVE_NAME = "Encrypted.bin";
+    private static final String DECRYPTED_FOLDER = "decrypted/";
     private boolean isEncrypted;
 
     public void openFileButton() {
         FileChooser fileChooser = new FileChooser();
+        fileChooser.setInitialDirectory(new File("."));
         files = fileChooser.showOpenMultipleDialog(null);
         folderPathLabel.setText("");
         Optional.ofNullable(files)
                 .ifPresentOrElse(fNames -> fNames.forEach(file -> filePathLabel.appendText(file.getName() + "\n")),
                         () -> filePathLabel.setText("Select your files!!!"));
+
+        encipherBtn.setDisable(false);
+        decipherBtn.setDisable(false);
+
     }
 
     public void openFolderButton() {
@@ -52,36 +66,78 @@ public class Controller {
         Optional.ofNullable(files.get(0))
                 .ifPresentOrElse(f -> folderPathLabel.setText(f.getAbsolutePath() + File.separator),
                         () -> folderPathLabel.setText("Select your folder!!!"));
+
+        encipherBtn.setDisable(false);
+        decipherBtn.setDisable(false);
     }
 
     @SneakyThrows
     public void encipher() {
+        val mode = EncipherMode.valueOf(encipherModeCB.getValue());
         isEncrypted = true;
         val bf = new Blowfish(secretKeyLabel.getCharacters().toString());
-        try(val reader = new BufferedReader(
-                new InputStreamReader(new FileInputStream(files.get(0).getPath()), "Cp1251"))) {
 
-            val data = bf.encipher(reader.lines().collect(Collectors.joining("\n")));
+        byte[] encipheredData = bf.encipher(
+                ArrayUtils.toPrimitive(files.stream()
+                .map(File::toPath)
+                .map(file -> {
+                    var name = file.getFileName().toString().getBytes();
+                    val size = file.toFile().length();
+                    byte[] data = new byte[0];
+                    try {
+                        data = ArrayUtils.addAll(
+                                ByteBuffer.allocate(8).putLong(size).array(),
+                                ArrayUtils.addAll(
+                                        ArrayUtils.addAll(
+                                                ByteBuffer.allocate(8).putLong(name.length).array(),
+                                                name),
+                                        Files.readAllBytes(file)
+                                )
+                        );
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                    return data;
+                }).flatMap(bytes -> Arrays.stream(ArrayUtils.toObject(bytes)))
+                .toArray(Byte[]::new)), mode);
 
-            val dec = bf.decipher(data);
-        }
+        val name = UUID.randomUUID() + ARCHIVE_NAME;
+        Files.write(Paths.get(name), encipheredData, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+//
+//        files = List.of(Paths.get(name).toFile());
+//
+//        decipher();
 
-        try(val writer = new BufferedWriter(
-                new OutputStreamWriter(new FileOutputStream("encrypted.bin"), "Cp1251")
-        )) {}
-
+        filePathLabel.clear();
+        encipherBtn.setDisable(true);
+        decipherBtn.setDisable(true);
     }
 
     @SneakyThrows
     public void decipher() {
-//        if(!isEncrypted)
-//            bf = new Blowfish(secretKeyLabel.getCharacters().toString());
-        FileInputStream fi = new FileInputStream(files.get(0).getPath());
-        FileOutputStream fo = new FileOutputStream("encrypted.txt");
-        InputStreamReader is = new InputStreamReader(fi,"Cp1251");
-        OutputStreamWriter os = new OutputStreamWriter(fo,"Cp1251");
-        String data = "";
-        //bf.decrypt(data);
-        System.out.println(data);
+        val bf = new Blowfish(secretKeyLabel.getCharacters().toString());
+        val deciphered = bf.decipher(Files.readAllBytes(files.get(0).toPath()));
+        try (val reader = new ByteArrayInputStream(deciphered)) {
+            while (reader.available() > 0) {
+                val fileSize = ByteBuffer.wrap(reader.readNBytes(8)).getLong();
+                val fileNameSize = ByteBuffer.wrap(reader.readNBytes(8)).getLong();
+                val fileName = new String(reader.readNBytes((int)fileNameSize));
+                val file = reader.readNBytes((int)fileSize);
+
+                Files.write(Paths.get(DECRYPTED_FOLDER + fileName), file, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+            }
+        }
+
+        filePathLabel.clear();
+        encipherBtn.setDisable(true);
+        decipherBtn.setDisable(true);
+    }
+
+    @SneakyThrows
+    @Override
+    public void initialize(URL location, ResourceBundle resources) {
+        if (!Files.exists(Paths.get(DECRYPTED_FOLDER))) Files.createDirectory(Paths.get(DECRYPTED_FOLDER));
+        encipherModeCB.getItems().addAll(Arrays.stream(EncipherMode.values()).map(EncipherMode::name).collect(Collectors.toList()));
+
     }
 }

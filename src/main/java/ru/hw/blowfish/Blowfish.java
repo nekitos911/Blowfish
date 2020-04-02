@@ -9,6 +9,7 @@ import ru.hw.blowfish.enums.BlockCipherMode;
 import ru.hw.blowfish.enums.EncipherMode;
 
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -20,20 +21,14 @@ public class Blowfish {
     private byte[] byteIV;
     private long Xl;
     private long Xr;
-    private EncipherMode encipherMode;
-
-    public Blowfish(String hexKey) {
-        this(hexKey, EncipherMode.ECB);
-    }
 
     @SneakyThrows
-    public Blowfish(String hexKey, EncipherMode encipherMode) {
+    public Blowfish(String hexKey) {
         if (hexKey.length() > 56)
             throw new ArrayIndexOutOfBoundsException("String should be more less 56");
         else if (hexKey.length() < 4)
             throw new StringIndexOutOfBoundsException("String should be more than 3");
 
-        this.encipherMode = encipherMode;
         setupKey(hexKey.getBytes());
     }
 
@@ -96,23 +91,23 @@ public class Blowfish {
         Xl = temp;
     }
 
-    private String ECBMode(List<byte[]> blocks, BlockCipherMode mode) {
-        return blocks.parallelStream()
-                .map(block -> ArrayUtils.toPrimitive(ArrayUtils.toObject(block)))
-                .map(block -> setBlock(block, mode))
-                .map(String::new)
-                .collect(Collectors.joining());
+    private byte[] ECBMode(List<byte[]> blocks, BlockCipherMode mode) {
+        return ArrayUtils.toPrimitive(
+                blocks.parallelStream()
+                        .flatMap(block -> Arrays.stream(ArrayUtils.toObject(setBlock(block, mode))))
+                        .toArray(Byte[]::new)
+        );
     }
 
-    private String ECBEncipher(List<byte[]> blocks) {
+    private byte[] ECBEncipher(List<byte[]> blocks) {
         return ECBMode(blocks, BlockCipherMode.ENCIPHER);
     }
 
-    private String ECBDecipher(List<byte[]> blocks) {
+    private byte[] ECBDecipher(List<byte[]> blocks) {
         return ECBMode(blocks, BlockCipherMode.DECIPHER);
     }
 
-    private String CBCEncipher(List<byte[]> blocks) {
+    private byte[] CBCEncipher(List<byte[]> blocks) {
         val mode = BlockCipherMode.ENCIPHER;
 
         // проксорил с IV первый блок
@@ -137,10 +132,15 @@ public class Blowfish {
             blocks.set(i, setBlock(secondBlock, mode));
         }
 
-        return blocks.parallelStream().map(String::new).collect(Collectors.joining());
+        return ArrayUtils.toPrimitive(
+                blocks
+                        .parallelStream()
+                        .flatMap(block -> Arrays.stream(ArrayUtils.toObject(block)))
+                        .toArray(Byte[]::new)
+        );
     }
 
-    private String CBCDecipher(List<byte[]> blocks) {
+    private byte[] CBCDecipher(List<byte[]> blocks) {
         val mode = BlockCipherMode.DECIPHER;
 
         // на выход все блоки, кроме первого
@@ -170,10 +170,15 @@ public class Blowfish {
             blocks.get(0)[i] ^= byteIV[i];
         }
 
-        return blocks.parallelStream().map(String::new).collect(Collectors.joining());
+        return ArrayUtils.toPrimitive(
+                blocks
+                        .parallelStream()
+                        .flatMap(block -> Arrays.stream(ArrayUtils.toObject(block)))
+                        .toArray(Byte[]::new)
+        );
     }
 
-    private String OFBMode(List<byte[]> blocks) {
+    private byte[] OFBMode(List<byte[]> blocks) {
         var byteIVCopy = ArrayUtils.clone(byteIV);
 
         for (byte[] bytes : blocks) {
@@ -186,10 +191,15 @@ public class Blowfish {
             }
         }
 
-        return blocks.parallelStream().map(String::new).collect(Collectors.joining());
+        return ArrayUtils.toPrimitive(
+                blocks
+                        .parallelStream()
+                        .flatMap(block -> Arrays.stream(ArrayUtils.toObject(block)))
+                        .toArray(Byte[]::new)
+        );
     }
 
-    private String PCBCEncipher(List<byte[]> blocks) {
+    private byte[] PCBCEncipher(List<byte[]> blocks) {
         val mode = BlockCipherMode.ENCIPHER;
         val blocksCopy = blocks.stream().map(ArrayUtils::clone).collect(Collectors.toList());
 
@@ -218,10 +228,15 @@ public class Blowfish {
             blocks.set(i, setBlock(secondBlock, mode));
         }
 
-        return blocks.parallelStream().map(String::new).collect(Collectors.joining());
+        return ArrayUtils.toPrimitive(
+                blocks
+                        .parallelStream()
+                        .flatMap(block -> Arrays.stream(ArrayUtils.toObject(block)))
+                        .toArray(Byte[]::new)
+        );
     }
 
-    private String PCBCDecipher(List<byte[]> blocks) {
+    private byte[] PCBCDecipher(List<byte[]> blocks) {
         val mode = BlockCipherMode.DECIPHER;
         val blocksCopy = blocks.stream().map(ArrayUtils::clone).collect(Collectors.toList());
 
@@ -248,40 +263,46 @@ public class Blowfish {
             blocks.set(i, a);
         }
 
-        return blocks.parallelStream().map(String::new).collect(Collectors.joining());
+        return ArrayUtils.toPrimitive(
+                blocks
+                        .stream()
+                        .flatMap(block -> Arrays.stream(ArrayUtils.toObject(block)))
+                        .toArray(Byte[]::new)
+        );
     }
 
     @SneakyThrows
-    public String encipher(String data) {
+    public byte[] encipher(byte[] data, EncipherMode encipherMode) {
         // Set random IV
         byteIV = RandomStringUtils.randomAlphabetic(BLOCK_SIZE).getBytes();
-        val bytesData = data.getBytes();
-        val realLength = bytesData.length;
-        val padding = (BLOCK_SIZE - bytesData.length % BLOCK_SIZE) % BLOCK_SIZE;
-        val blocks = createBlocks(ArrayUtils.addAll(bytesData, new byte[padding]));
+        val realLength = data.length;
+        val padding = (BLOCK_SIZE - data.length % BLOCK_SIZE) % BLOCK_SIZE;
+        val blocks = createBlocks(ArrayUtils.addAll(data, new byte[padding]));
 
         return
-                new String(byteIV)
-                        + new String(ByteBuffer.allocate(8).putLong(realLength).array())
-                        + switch (encipherMode) {
-                    case ECB -> ECBEncipher(blocks);
-                    case CBC -> CBCEncipher(blocks);
-                    case OFB -> OFBMode(blocks);
-                    case PCBC -> PCBCEncipher(blocks);
-                    default -> throw new RuntimeException("Not supported mode!!!");
-                };
+                ArrayUtils.addAll(
+                        ByteBuffer.allocate(8).putLong(encipherMode.getCode()).array(),
+                        ArrayUtils.addAll(
+                                ArrayUtils.addAll(byteIV, ByteBuffer.allocate(8).putLong(realLength).array()),
+                                switch (encipherMode) {
+                                    case ECB -> ECBEncipher(blocks);
+                                    case CBC -> CBCEncipher(blocks);
+                                    case OFB -> OFBMode(blocks);
+                                    case PCBC -> PCBCEncipher(blocks);
+                                    default -> throw new RuntimeException("Not supported mode!!!");
+                                }));
     }
 
     @SneakyThrows
-    public String decipher(String data) {
-        var bytesData = data.getBytes();
+    public byte[] decipher(byte[] data) {
         // read IV from first 8 bytes
-        byteIV = ArrayUtils.subarray(bytesData, 0, BLOCK_SIZE);
-        val realLength = ByteBuffer.wrap(ArrayUtils.subarray(bytesData, byteIV.length, byteIV.length + BLOCK_SIZE)).getLong();
-        // skip IV and length
-        val blocks = createBlocks(bytesData).subList(2, bytesData.length / BLOCK_SIZE);
+        val encipherMode = EncipherMode.getByCode((int)ByteBuffer.wrap(ArrayUtils.subarray(data, 0, BLOCK_SIZE)).getLong());
+        byteIV = ArrayUtils.subarray(data, BLOCK_SIZE, BLOCK_SIZE * 2);
+        val realLength = ByteBuffer.wrap(ArrayUtils.subarray(data, BLOCK_SIZE + byteIV.length,  byteIV.length + BLOCK_SIZE * 2)).getLong();
+        // skip mode, IV and length
+        val blocks = createBlocks(data).subList(3, data.length / BLOCK_SIZE);
 
-        String res = switch (encipherMode) {
+        byte[] res = switch (encipherMode) {
             case ECB -> ECBDecipher(blocks);
             case CBC -> CBCDecipher(blocks);
             case OFB -> OFBMode(blocks);
@@ -289,8 +310,7 @@ public class Blowfish {
             default -> throw new RuntimeException("Not supported mode!!!");
         };
 
-        val bytes = res.getBytes();
-        return new String(ArrayUtils.subarray(bytes, 0, (int)realLength));
+        return ArrayUtils.subarray(res, 0, (int)realLength);
     }
 
     @Synchronized
