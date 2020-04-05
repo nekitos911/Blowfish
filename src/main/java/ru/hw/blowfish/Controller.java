@@ -101,12 +101,8 @@ public class Controller implements Initializable {
                 }).flatMap(bytes -> Arrays.stream(ArrayUtils.toObject(bytes)))
                 .toArray(Byte[]::new)), mode);
 
-        val name = UUID.randomUUID() + ARCHIVE_NAME;
+        val name = UUID.randomUUID() + "_" + ARCHIVE_NAME;
         Files.write(Paths.get(name), encipheredData, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
-//
-//        files = List.of(Paths.get(name).toFile());
-//
-//        decipher();
 
         filePathLabel.clear();
         encipherBtn.setDisable(true);

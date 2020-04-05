@@ -16,7 +16,7 @@ public class Utils {
     public static final int ROUNDS = 16;
     public static final int BLOCK_SIZE = Long.BYTES;
 
-    public static long xor(long a,long b) {
+    public static long xor(long a, long b) {
         return unsignedLong(a ^ b);
     }
 

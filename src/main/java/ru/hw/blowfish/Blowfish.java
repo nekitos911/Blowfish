@@ -4,14 +4,15 @@ import lombok.SneakyThrows;
 import lombok.Synchronized;
 import lombok.val;
 import org.apache.commons.lang3.ArrayUtils;
-import org.apache.commons.lang3.RandomStringUtils;
 import ru.hw.blowfish.enums.BlockCipherMode;
 import ru.hw.blowfish.enums.EncipherMode;
 
 import java.nio.ByteBuffer;
+import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static ru.hw.blowfish.Utils.*;
 
@@ -22,12 +23,11 @@ public class Blowfish {
     private long Xl;
     private long Xr;
 
-    @SneakyThrows
     public Blowfish(String hexKey) {
         if (hexKey.length() > 56)
-            throw new ArrayIndexOutOfBoundsException("String should be more less 56");
+            throw new RuntimeException("key should be more less 56");
         else if (hexKey.length() < 4)
-            throw new StringIndexOutOfBoundsException("String should be more than 3");
+            throw new RuntimeException("key should be more than 3");
 
         setupKey(hexKey.getBytes());
     }
@@ -254,18 +254,18 @@ public class Blowfish {
                 blocksCopy.get(i - 1)[j] ^= blocks.get(i - 1)[j];
             }
             byte[] firstBlock = blocksCopy.get(i - 1);
-            var a = setBlock(blocks.get(i), BlockCipherMode.DECIPHER);
+            var secondBlock = setBlock(blocks.get(i), BlockCipherMode.DECIPHER);
 
             for (int j = 0; j < BLOCK_SIZE; j++) {
-                a[j] ^= firstBlock[j];
+                secondBlock[j] ^= firstBlock[j];
             }
 
-            blocks.set(i, a);
+            blocks.set(i, secondBlock);
         }
 
         return ArrayUtils.toPrimitive(
                 blocks
-                        .stream()
+                        .parallelStream()
                         .flatMap(block -> Arrays.stream(ArrayUtils.toObject(block)))
                         .toArray(Byte[]::new)
         );
@@ -274,7 +274,7 @@ public class Blowfish {
     @SneakyThrows
     public byte[] encipher(byte[] data, EncipherMode encipherMode) {
         // Set random IV
-        byteIV = RandomStringUtils.randomAlphabetic(BLOCK_SIZE).getBytes();
+        byteIV = SecureRandom.getInstanceStrong().generateSeed(BLOCK_SIZE);
         val realLength = data.length;
         val padding = (BLOCK_SIZE - data.length % BLOCK_SIZE) % BLOCK_SIZE;
         val blocks = createBlocks(ArrayUtils.addAll(data, new byte[padding]));
@@ -298,7 +298,8 @@ public class Blowfish {
         // read IV from first 8 bytes
         val encipherMode = EncipherMode.getByCode((int)ByteBuffer.wrap(ArrayUtils.subarray(data, 0, BLOCK_SIZE)).getLong());
         byteIV = ArrayUtils.subarray(data, BLOCK_SIZE, BLOCK_SIZE * 2);
-        val realLength = ByteBuffer.wrap(ArrayUtils.subarray(data, BLOCK_SIZE + byteIV.length,  byteIV.length + BLOCK_SIZE * 2)).getLong();
+        val realLength = ByteBuffer.wrap(ArrayUtils.subarray(data, BLOCK_SIZE + byteIV.length,
+                byteIV.length + BLOCK_SIZE * 2)).getLong();
         // skip mode, IV and length
         val blocks = createBlocks(data).subList(3, data.length / BLOCK_SIZE);
 
@@ -315,8 +316,6 @@ public class Blowfish {
 
     @Synchronized
     private byte[] setBlock(byte[] block, BlockCipherMode mode) {
-        byte[] tmp = new byte[8];
-
         Xl = unsignedLong(bytesToLong(block));
         Xr = unsignedLong((bytesToLong(block)) >> 32);
         switch (mode) {
@@ -324,10 +323,12 @@ public class Blowfish {
             case ENCIPHER -> encipher();
         }
 
-        System.arraycopy(longToBytes(Xl),0,tmp,0,4);
-        System.arraycopy(longToBytes(Xr),0,tmp,4,4);
-
-        return tmp;
+        return ArrayUtils.toPrimitive(
+                Stream.of(Xl, Xr)
+                .map(val -> ArrayUtils.subarray(ArrayUtils.toObject(longToBytes(val)), 0, Integer.BYTES))
+                .flatMap(Arrays::stream)
+                .toArray(Byte[]::new)
+        );
     }
 
     private long F(long xl) {
