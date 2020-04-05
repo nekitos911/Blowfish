@@ -21,6 +21,8 @@ import java.util.stream.Collectors;
 public class Benchmark {
     private static int ITERATIONS = 50;
     private static int BLOCKS = 1_000_000;
+    private static final String FOLDER = "benchmarks/";
+    private static final String FILE = FOLDER + "benchmark.txt";
 
     public static void main(String[] args) throws IOException {
         val res = Arrays.stream(BlockCipherMode.values())
@@ -29,17 +31,17 @@ public class Benchmark {
                         .map(mode -> mode.name() + ": " + testEncipher(mode, value) + " ms")
                         .collect(Collectors.toList())));
 
-        if (!Files.exists(Paths.get("benchmark/"))) {
-            Files.createDirectory(Paths.get("benchmark/"));
+        if (!Files.exists(Paths.get(FOLDER))) {
+            Files.createDirectory(Paths.get(FOLDER));
         }
 
-        Files.write(Paths.get("benchmark/benchmark.txt"), (LocalDateTime.now().toString() + "\n").getBytes(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        Files.write(Paths.get(FILE), (LocalDateTime.now().toString() + "\n").getBytes(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         res.forEach((key, value) -> {
             try {
-                Files.write(Paths.get("benchmark/benchmark.txt"), (key + ":" + "\n").getBytes(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+                Files.write(Paths.get(FILE), (key + ":" + "\n").getBytes(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
                 value.forEach(val -> {
                     try {
-                        Files.write(Paths.get("benchmark/benchmark.txt"), (val + "\n").getBytes(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+                        Files.write(Paths.get(FILE), (val + "\n").getBytes(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
@@ -56,16 +58,18 @@ public class Benchmark {
     private static long testEncipher(EncipherMode mode, BlockCipherMode blockCipherMode) {
         val pwd = RandomStringUtils.randomAscii(4, 56);
         var bf = new Blowfish(pwd);
-        val inputData = blockCipherMode != BlockCipherMode.DECIPHER ?
-                RandomStringUtils.randomAscii(BLOCKS * Utils.BLOCK_SIZE).getBytes()
-                : bf.encipher(RandomStringUtils.randomAscii(BLOCKS * Utils.BLOCK_SIZE).getBytes(), mode);
+        val inputData = switch (blockCipherMode) {
+            case ENCIPHER -> RandomStringUtils.randomAscii(BLOCKS * Utils.BLOCK_SIZE).getBytes();
+            case DECIPHER -> bf.encipher(RandomStringUtils.randomAscii(BLOCKS * Utils.BLOCK_SIZE).getBytes(), mode);
+        };
 
-        var begin = Instant.now();
         byte[] res = null;
+        var begin = Instant.now();
         for (int i = 0; i < ITERATIONS; i++) {
-            res = blockCipherMode != BlockCipherMode.DECIPHER
-                    ? bf.encipher(inputData, mode)
-                    : bf.decipher(inputData);
+            res = switch(blockCipherMode) {
+                case ENCIPHER -> bf.encipher(inputData, mode);
+                case DECIPHER -> bf.decipher(inputData);
+            };
         }
         val duration = Duration.between(begin, Instant.now()).abs().toMillis() / ITERATIONS;
         System.out.println(res);
