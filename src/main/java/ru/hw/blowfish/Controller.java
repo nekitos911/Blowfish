@@ -14,6 +14,7 @@ import java.io.*;
 import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.*;
@@ -46,29 +47,30 @@ public class Controller implements Initializable {
     public void openFileButton() {
         FileChooser fileChooser = new FileChooser();
         fileChooser.setInitialDirectory(new File("."));
-        files = fileChooser.showOpenMultipleDialog(null);
+        addFiles(fileChooser.showOpenMultipleDialog(null));
+    }
+
+    private void addFiles(Collection<? extends File> files) {
+        this.files.addAll(files);
         folderPathLabel.setText("");
-        Optional.ofNullable(files)
+        Optional.ofNullable(this.files)
                 .ifPresentOrElse(fNames -> fNames.forEach(file -> filePathLabel.appendText(file.getName() + "\n")),
                         () -> filePathLabel.setText("Select your files!!!"));
 
         encipherBtn.setDisable(false);
         decipherBtn.setDisable(false);
-
     }
 
+    @SneakyThrows
     public void openFolderButton() {
         DirectoryChooser directoryChooser = new DirectoryChooser();
+        directoryChooser.setInitialDirectory(new File("."));
         File folderName = directoryChooser.showDialog(null);
-        files = new LinkedList<>();
-        files.add(folderName.getAbsoluteFile());
-        filePathLabel.setText("");
-        Optional.ofNullable(files.get(0))
-                .ifPresentOrElse(f -> folderPathLabel.setText(f.getAbsolutePath() + File.separator),
-                        () -> folderPathLabel.setText("Select your folder!!!"));
-
-        encipherBtn.setDisable(false);
-        decipherBtn.setDisable(false);
+        addFiles(Files.find(folderName.toPath(),
+                Integer.MAX_VALUE,
+                (filePath, fileAttr) -> fileAttr.isRegularFile())
+                .map(Path::toFile)
+                .collect(Collectors.toList()));
     }
 
     @SneakyThrows
@@ -79,34 +81,32 @@ public class Controller implements Initializable {
 
         byte[] encipheredData = bf.encipher(
                 ArrayUtils.toPrimitive(files.stream()
-                .map(File::toPath)
-                .map(file -> {
-                    var name = file.getFileName().toString().getBytes();
-                    val size = file.toFile().length();
-                    byte[] data = new byte[0];
-                    try {
-                        data = ArrayUtils.addAll(
-                                ByteBuffer.allocate(8).putLong(size).array(),
-                                ArrayUtils.addAll(
+                        .map(File::toPath)
+                        .map(file -> {
+                            var name = file.getFileName().toString().getBytes();
+                            val size = file.toFile().length();
+                            byte[] data = new byte[0];
+                            try {
+                                data = ArrayUtils.addAll(
+                                        ByteBuffer.allocate(8).putLong(size).array(),
                                         ArrayUtils.addAll(
-                                                ByteBuffer.allocate(8).putLong(name.length).array(),
-                                                name),
-                                        Files.readAllBytes(file)
-                                )
-                        );
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                    return data;
-                }).flatMap(bytes -> Arrays.stream(ArrayUtils.toObject(bytes)))
-                .toArray(Byte[]::new)), mode);
+                                                ArrayUtils.addAll(
+                                                        ByteBuffer.allocate(8).putLong(name.length).array(),
+                                                        name),
+                                                Files.readAllBytes(file)
+                                        )
+                                );
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
+                            return data;
+                        }).flatMap(bytes -> Arrays.stream(ArrayUtils.toObject(bytes)))
+                        .toArray(Byte[]::new)), mode);
 
         val name = UUID.randomUUID() + "_" + ARCHIVE_NAME;
         Files.write(Paths.get(name), encipheredData, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
 
-        filePathLabel.clear();
-        encipherBtn.setDisable(true);
-        decipherBtn.setDisable(true);
+        clear();
     }
 
     @SneakyThrows
@@ -124,9 +124,7 @@ public class Controller implements Initializable {
             }
         }
 
-        filePathLabel.clear();
-        encipherBtn.setDisable(true);
-        decipherBtn.setDisable(true);
+        clear();
     }
 
     @SneakyThrows
@@ -134,6 +132,13 @@ public class Controller implements Initializable {
     public void initialize(URL location, ResourceBundle resources) {
         if (!Files.exists(Paths.get(DECRYPTED_FOLDER))) Files.createDirectory(Paths.get(DECRYPTED_FOLDER));
         encipherModeCB.getItems().addAll(Arrays.stream(EncipherMode.values()).map(EncipherMode::name).collect(Collectors.toList()));
+        files = new ArrayList<>();
+    }
 
+    private void clear() {
+        files.clear();
+        filePathLabel.clear();
+        encipherBtn.setDisable(true);
+        decipherBtn.setDisable(true);
     }
 }
