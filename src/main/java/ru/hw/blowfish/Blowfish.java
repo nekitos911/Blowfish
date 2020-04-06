@@ -1,9 +1,9 @@
 package ru.hw.blowfish;
 
 import lombok.SneakyThrows;
-import lombok.Synchronized;
 import lombok.val;
 import org.apache.commons.lang3.ArrayUtils;
+import org.apache.commons.lang3.tuple.ImmutablePair;
 import ru.hw.blowfish.enums.BlockCipherMode;
 import ru.hw.blowfish.enums.EncipherMode;
 
@@ -15,13 +15,12 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static ru.hw.blowfish.Utils.*;
+import static ru.hw.blowfish.enums.BlockCipherMode.ENCIPHER;
 
 public class Blowfish {
     private long[] p = new long[N + 2];
     private long[][] s = new long[4][256];
     private byte[] byteIV;
-    private long Xl;
-    private long Xr;
 
     public Blowfish(String hexKey) {
         if (hexKey.length() > 56)
@@ -36,6 +35,7 @@ public class Blowfish {
         System.arraycopy(RandomNumberTables.bf_P, 0, p, 0, N + 2);
         for (int i = 0; i < s.length; i++)
             System.arraycopy(RandomNumberTables.bf_S[i], 0, s[i], 0, s[i].length);
+        var pair = new ImmutablePair<>(0L, 0L);
 
         int length = key.length;
         int j = 0;
@@ -47,48 +47,43 @@ public class Blowfish {
         }
 
         for (int i = 0; i < N + 2; i += 2) {
-            encipher();
-            p[i] = Xl;
-            p[i + 1] = Xr;
+            pair = callCipher(pair.left, pair.right, ENCIPHER);
+            p[i] = pair.left;
+            p[i + 1] = pair.right;
         }
 
         for (var sBucket : s) {
             for (int k = 0; k < 256; k += 2) {
-                encipher();
-                sBucket[k] = Xl;
-                sBucket[k + 1] = Xr;
+                pair = callCipher(pair.left, pair.right, ENCIPHER);
+                sBucket[k] = pair.left;
+                sBucket[k + 1] = pair.right;
             }
         }
     }
 
-    @Synchronized
-    private void encipher() {
-        Xl = xor(Xl, p[0]);
+    private ImmutablePair<Long, Long> callCipher(long xl, long xr, BlockCipherMode mode) {
+        switch (mode) {
+            case ENCIPHER -> {
+                xl = xor(xl, p[0]);
 
-        for (int i = 0; i < ROUNDS; i += 2) {
-            Xr = xor(Xr, xor(F(Xl), p[i + 1]));
-            Xl = xor(Xl, xor(F(Xr), p[i + 2]));
+                for (int i = 0; i < ROUNDS; i += 2) {
+                    xr = xor(xr, xor(F(xl), p[i + 1]));
+                    xl = xor(xl, xor(F(xr), p[i + 2]));
+                }
+                xr = xor(xr, p[N + 1]);
+            }
+            case DECIPHER -> {
+                xl = xor(xl, p[N + 1]);
+
+                for (int i = N; i > 0; i -= 2) {
+                    xr = xor(xr, xor(F(xl), p[i]));
+                    xl = xor(xl, xor(F(xr), p[i - 1]));
+                }
+                xr = xor(xr, p[0]);
+            }
         }
-
-        Xr = xor(Xr, p[N + 1]);
         //Swap Xl and Xr
-        long temp = Xr;
-        Xr = Xl;
-        Xl = temp;
-    }
-
-    @Synchronized
-    private void decipher() {
-        Xl = xor(Xl, p[N + 1]);
-        for (int i = N; i > 0; i -= 2) {
-            Xr = xor(Xr, xor(F(Xl), p[i]));
-            Xl = xor(Xl, xor(F(Xr), p[i - 1]));
-        }
-        Xr = xor(Xr, p[0]);
-        //Swap Xl and Xr
-        long temp = Xr;
-        Xr = Xl;
-        Xl = temp;
+        return new ImmutablePair<>(xr, xl);
     }
 
     private byte[] ECBMode(List<byte[]> blocks, BlockCipherMode mode) {
@@ -314,20 +309,14 @@ public class Blowfish {
         return ArrayUtils.subarray(res, 0, (int)realLength);
     }
 
-    @Synchronized
     private byte[] setBlock(byte[] block, BlockCipherMode mode) {
-        Xl = unsignedLong(bytesToLong(block));
-        Xr = unsignedLong((bytesToLong(block)) >> 32);
-        switch (mode) {
-            case DECIPHER -> decipher();
-            case ENCIPHER -> encipher();
-        }
+        val pair = callCipher(unsignedLong(bytesToLong(block)), unsignedLong((bytesToLong(block)) >> 32), mode);
 
         return ArrayUtils.toPrimitive(
-                Stream.of(Xl, Xr)
-                .map(val -> ArrayUtils.subarray(ArrayUtils.toObject(longToBytes(val)), 0, Integer.BYTES))
-                .flatMap(Arrays::stream)
-                .toArray(Byte[]::new)
+                Stream.of(pair.left, pair.right)
+                        .map(val -> ArrayUtils.subarray(ArrayUtils.toObject(longToBytes(val)), 0, Integer.BYTES))
+                        .flatMap(Arrays::stream)
+                        .toArray(Byte[]::new)
         );
     }
 
