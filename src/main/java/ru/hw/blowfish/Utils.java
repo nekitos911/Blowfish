@@ -17,10 +17,10 @@ public class Utils {
     public static final int BLOCK_SIZE = Long.BYTES;
 
     public static long xor(long a, long b) {
-        return unsignedLong(a ^ b);
+        return unsignedInt(a ^ b);
     }
 
-    public static long unsignedLong(long number) {
+    public static long unsignedInt(long number) {
         return number & 0xffffffffL;
     }
 

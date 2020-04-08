@@ -19,7 +19,7 @@ import java.util.Arrays;
 import java.util.stream.Collectors;
 
 public class Benchmark {
-    private static int ITERATIONS = 50;
+    private static int ITERATIONS = 10;
     private static int BLOCKS = 1_000_000;
     private static final String FOLDER = "benchmarks/";
     private static final String FILE = FOLDER + "benchmark.txt";
@@ -35,7 +35,11 @@ public class Benchmark {
             Files.createDirectory(Paths.get(FOLDER));
         }
 
+        Files.write(Paths.get(FILE), ("=".repeat(50) + "\n").getBytes(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         Files.write(Paths.get(FILE), (LocalDateTime.now().toString() + "\n").getBytes(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        Files.write(Paths.get(FILE), ("number of blocks: " + BLOCKS + "\n").getBytes(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        Files.write(Paths.get(FILE), ("iterations: " + ITERATIONS + "\n").getBytes(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+
         res.forEach((key, value) -> {
             try {
                 Files.write(Paths.get(FILE), (key + ":" + "\n").getBytes(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
@@ -52,6 +56,8 @@ public class Benchmark {
             }
 
         });
+
+        Files.write(Paths.get(FILE), ("-".repeat(50) + "\n").getBytes(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
     }
 
     @SneakyThrows

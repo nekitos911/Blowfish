@@ -310,7 +310,7 @@ public class Blowfish {
     }
 
     private byte[] setBlock(byte[] block, BlockCipherMode mode) {
-        val pair = callCipher(unsignedLong(bytesToLong(block)), unsignedLong((bytesToLong(block)) >> 32), mode);
+        val pair = callCipher(unsignedInt(bytesToLong(block)), unsignedInt((bytesToLong(block)) >> 32), mode);
 
         return ArrayUtils.toPrimitive(
                 Stream.of(pair.left, pair.right)
