@@ -62,12 +62,22 @@ public class Benchmark {
 
     @SneakyThrows
     private static long testEncipher(EncipherMode mode, BlockCipherMode blockCipherMode) {
+
         val pwd = RandomStringUtils.randomAscii(4, 56);
         var bf = new Blowfish(pwd);
-        val inputData = switch (blockCipherMode) {
+        var inputData = switch (blockCipherMode) {
             case ENCIPHER -> RandomStringUtils.randomAscii(BLOCKS * Utils.BLOCK_SIZE).getBytes();
             case DECIPHER -> bf.encipher(RandomStringUtils.randomAscii(BLOCKS * Utils.BLOCK_SIZE).getBytes(), mode);
         };
+
+        // warmup
+        for (int i = 0; i < 10; i++) {
+            val tmp = switch(blockCipherMode) {
+                case ENCIPHER -> bf.encipher(inputData, mode);
+                case DECIPHER -> bf.decipher(inputData);
+            };
+            System.out.println(tmp);
+        }
 
         byte[] res = null;
         var begin = Instant.now();

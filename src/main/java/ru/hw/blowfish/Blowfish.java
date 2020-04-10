@@ -1,5 +1,6 @@
 package ru.hw.blowfish;
 
+import com.google.common.collect.Lists;
 import lombok.SneakyThrows;
 import lombok.val;
 import org.apache.commons.lang3.ArrayUtils;
@@ -11,7 +12,9 @@ import java.nio.ByteBuffer;
 import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.List;
+import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import static ru.hw.blowfish.Utils.*;
@@ -35,16 +38,25 @@ public class Blowfish {
         System.arraycopy(RandomNumberTables.bf_P, 0, p, 0, N + 2);
         for (int i = 0; i < s.length; i++)
             System.arraycopy(RandomNumberTables.bf_S[i], 0, s[i], 0, s[i].length);
-        var pair = new ImmutablePair<>(0L, 0L);
 
-        int length = key.length;
-        int j = 0;
+        val repeatedKey = Lists.partition(
+                IntStream.range(0, (N + 2) * Integer.BYTES)
+                        .mapToObj(i -> key[i % key.length])
+                        .collect(Collectors.toList()),
+                Integer.BYTES
+        )
+                .parallelStream()
+                .map(lst -> lst.toArray(Byte[]::new))
+                .map(ArrayUtils::toPrimitive)
+                .map(arr -> ByteBuffer.wrap(arr).getInt())
+                .map(Utils::unsignedInt)
+                .toArray(Long[]::new);
 
         for (int i = 0; i < N + 2; i++) {
-            p[i] &= 0xffffffffL;
-            p[i] ^= key[j];
-            j = (j + 1) % length;
+            p[i] = xor(unsignedInt(p[i]), repeatedKey[i]);
         }
+
+        var pair = new ImmutablePair<>(0L, 0L);
 
         for (int i = 0; i < N + 2; i += 2) {
             pair = callCipher(pair.left, pair.right, ENCIPHER);
@@ -66,9 +78,9 @@ public class Blowfish {
             case ENCIPHER -> {
                 xl = xor(xl, p[0]);
 
-                for (int i = 0; i < ROUNDS; i += 2) {
-                    xr = xor(xr, xor(F(xl), p[i + 1]));
-                    xl = xor(xl, xor(F(xr), p[i + 2]));
+                for (int i = 1; i < ROUNDS; i += 2) {
+                    xr = xor(xr, xor(F(xl), p[i]));
+                    xl = xor(xl, xor(F(xr), p[i + 1]));
                 }
                 xr = xor(xr, p[N + 1]);
             }
